@@ -3,6 +3,10 @@ package com.flutterbeacon;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothManager;
 import android.content.Context;
@@ -33,6 +37,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import io.flutter.app.FlutterActivity;
 import io.flutter.plugin.common.BinaryMessenger;
 import io.flutter.plugin.common.EventChannel;
 import io.flutter.plugin.common.MethodCall;
@@ -64,6 +69,8 @@ public class FlutterBeaconPlugin implements MethodCallHandler,
   private EventChannel eventChannelMonitoring;
   private EventChannel eventChannelBluetoothState;
   private EventChannel eventChannelAuthorizationStatus;
+
+  private boolean permanentNotificationisShowned = false;
 
   private FlutterBeaconPlugin(Registrar registrar) {
     this.registrar = registrar;
@@ -204,8 +211,40 @@ public class FlutterBeaconPlugin implements MethodCallHandler,
     if (!beaconManager.getBeaconParsers().contains(iBeaconLayout)) {
       beaconManager.getBeaconParsers().clear();
       beaconManager.getBeaconParsers().add(iBeaconLayout);
+      buildPermanentNotification();
     }
   }
+
+  private void buildPermanentNotification() {
+    if(permanentNotificationisShowned) return;
+    Notification.Builder builder = new Notification.Builder(registrar.context());
+    builder.setSmallIcon(R.drawable.ticketless_logo_v2);
+    builder.setContentTitle("Scanning for Beacons");
+
+
+    //Opens the app when the notification is clicked
+    Intent intent = new Intent(registrar.context(), registrar.activity().getClass());
+    PendingIntent pendingIntent = PendingIntent.getActivity(registrar.context(), 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+    builder.setContentIntent(pendingIntent);
+
+
+    //if Android >=8.1 then create a Notification channel
+    if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O){
+        NotificationChannel channel = new NotificationChannel("ScanNotifChannelId",
+                "ScanNotifName", NotificationManager.IMPORTANCE_DEFAULT);
+        channel.setDescription("Scanning notification channel description");
+        NotificationManager notificationManager = (NotificationManager) registrar.activity().getSystemService(Context.NOTIFICATION_SERVICE);
+        notificationManager.createNotificationChannel(channel);
+        builder.setChannelId(channel.getId());
+    }
+    beaconManager.enableForegroundServiceScanning(builder.build(), 456);
+
+    //for the above code to be useful, we must first disable JobScheduler-based scans
+    beaconManager.setEnableScheduledScanJobs(false);
+    beaconManager.setBackgroundBetweenScanPeriod(0);
+    beaconManager.setBackgroundScanPeriod(1100);
+    permanentNotificationisShowned = true;
+}
 
   private void initializeAndCheck(Result result) {
     initialize();
